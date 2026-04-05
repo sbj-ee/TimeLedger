@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Time Ledger{% endblock %}
+
+{% block content %}
+<h1>Dashboard</h1>
+
+{% if timer %}
+<div class="timer-bar">
+    <div class="timer-info">
+        <div class="pulse"></div>
+        <div>
+            <strong>{{ timer.project_name }}</strong>
+            <div class="elapsed" id="timer-elapsed" data-started="{{ timer.started_at }}">00:00:00</div>
+        </div>
+    </div>
+    <div class="actions">
+        <form method="POST" action="{{ url_for('timer_stop') }}">
+            <button type="submit" class="btn btn-success">Stop &amp; Log</button>
+        </form>
+        <form method="POST" action="{{ url_for('timer_cancel') }}">
+            <button type="submit" class="btn btn-secondary">Cancel</button>
+        </form>
+    </div>
+</div>
+{% else %}
+<div class="filter-bar">
+    <form method="POST" action="{{ url_for('timer_start') }}">
+        <div class="form-row">
+            <div class="form-group">
+                <label>Start Timer</label>
+                <select name="project_id" required>
+                    <option value="">Select project...</option>
+                    {% for p in projects %}
+                    <option value="{{ p.id }}">{{ p.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary">Start</button>
+        </div>
+    </form>
+</div>
+{% endif %}
+
+<div class="cards">
+    <div class="card">
+        <h3>Today</h3>
+        <div class="value">{{ "%.1f"|format(today_total) }}h</div>
+    </div>
+    <div class="card">
+        <h3>This Week</h3>
+        <div class="value">{{ "%.1f"|format(week_total) }}h</div>
+    </div>
+    <div class="card">
+        <h3>This Month</h3>
+        <div class="value">{{ "%.1f"|format(month_total) }}h</div>
+    </div>
+</div>
+
+{% if week_summary %}
+<h2>This Week by Project</h2>
+<div class="bar-chart" style="margin: 1rem 0 2rem;">
+    {% for row in week_summary %}
+    <div class="bar-row">
+        <span class="bar-label">{{ row.project_name }}</span>
+        <div class="bar-track">
+            <div class="bar-fill" style="width: {{ (row.total_hours / week_total * 100) if week_total else 0 }}%"></div>
+        </div>
+        <span class="bar-value">{{ "%.1f"|format(row.total_hours) }}h</span>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<div class="section-header">
+    <h2>Recent Entries</h2>
+    <a href="{{ url_for('entries') }}" class="btn btn-secondary btn-small">View All</a>
+</div>
+
+{% if recent_entries %}
+<table>
+    <thead>
+        <tr>
+            <th>Date</th>
+            <th>Project</th>
+            <th class="text-right">Hours</th>
+            <th>Note</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for e in recent_entries %}
+        <tr>
+            <td>{{ e.date }}</td>
+            <td>{{ e.project_name }}</td>
+            <td class="text-right">{{ "%.2f"|format(e.hours) }}</td>
+            <td class="text-muted">{{ e.note or '' }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p class="text-muted">No entries yet. Start a timer or add an entry.</p>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+{% if timer %}
+<script>
+(function() {
+    const el = document.getElementById('timer-elapsed');
+    const started = new Date(el.dataset.started);
+    function update() {
+        const diff = Math.floor((Date.now() - started) / 1000);
+        const h = Math.floor(diff / 3600);
+        const m = Math.floor((diff % 3600) / 60);
+        const s = diff % 60;
+        el.textContent = String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+    }
+    update();
+    setInterval(update, 1000);
+})();
+</script>
+{% endif %}
+{% endblock %}

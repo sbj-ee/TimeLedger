@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}Reports - Time Ledger{% endblock %}
+
+{% block content %}
+<h1>Reports</h1>
+
+<div class="filter-bar">
+    <form method="GET" action="{{ url_for('reports') }}">
+        <div class="form-row">
+            <div class="form-group">
+                <label>Period</label>
+                <select name="period" onchange="toggleCustom(this.value)">
+                    <option value="week" {{ 'selected' if period == 'week' }}>This Week</option>
+                    <option value="month" {{ 'selected' if period == 'month' }}>This Month</option>
+                    <option value="custom" {{ 'selected' if period == 'custom' }}>Custom</option>
+                </select>
+            </div>
+            <div class="form-group custom-dates" style="{{ '' if period == 'custom' else 'display:none;' }}">
+                <label>From</label>
+                <input type="date" name="start_date" value="{{ start_date }}">
+            </div>
+            <div class="form-group custom-dates" style="{{ '' if period == 'custom' else 'display:none;' }}">
+                <label>To</label>
+                <input type="date" name="end_date" value="{{ end_date }}">
+            </div>
+            <div class="form-group">
+                <label>Project</label>
+                <select name="project_id">
+                    <option value="">All</option>
+                    {% for p in projects %}
+                    <option value="{{ p.id }}" {{ 'selected' if filter_project_id == p.id }}>{{ p.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary">Run</button>
+            <a href="{{ url_for('reports_csv', start_date=start_date, end_date=end_date, project_id=filter_project_id or '') }}" class="btn btn-secondary">CSV</a>
+        </div>
+    </form>
+</div>
+
+<div class="cards">
+    <div class="card">
+        <h3>Total Hours</h3>
+        <div class="value">{{ "%.1f"|format(total_hours) }}h</div>
+    </div>
+    <div class="card">
+        <h3>Period</h3>
+        <div class="value" style="font-size: 1rem;">{{ start_date }} to {{ end_date }}</div>
+    </div>
+    <div class="card">
+        <h3>Projects</h3>
+        <div class="value">{{ summary|length }}</div>
+    </div>
+</div>
+
+{% if summary %}
+<h2>By Project</h2>
+<div class="bar-chart" style="margin: 1rem 0 2rem;">
+    {% for row in summary %}
+    <div class="bar-row">
+        <span class="bar-label">{{ row.project_name }}</span>
+        <div class="bar-track">
+            <div class="bar-fill" style="width: {{ (row.total_hours / total_hours * 100) if total_hours else 0 }}%"></div>
+        </div>
+        <span class="bar-value">{{ "%.1f"|format(row.total_hours) }}h</span>
+    </div>
+    {% endfor %}
+</div>
+
+<h2>By Day</h2>
+<table>
+    <thead>
+        <tr>
+            <th>Date</th>
+            <th class="text-right">Hours</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for day in daily_totals %}
+        <tr>
+            <td>{{ day.date }}</td>
+            <td class="text-right">{{ "%.2f"|format(day.total_hours) }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+{% if entries %}
+<h2>Detail</h2>
+<table>
+    <thead>
+        <tr>
+            <th>Date</th>
+            <th>Project</th>
+            <th class="text-right">Hours</th>
+            <th>Note</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for e in entries %}
+        <tr>
+            <td>{{ e.date }}</td>
+            <td>{{ e.project_name }}</td>
+            <td class="text-right">{{ "%.2f"|format(e.hours) }}</td>
+            <td class="text-muted">{{ e.note or '' }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+{% if not summary and not entries %}
+<p class="text-muted">No data for this period.</p>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleCustom(val) {
+    document.querySelectorAll('.custom-dates').forEach(el => {
+        el.style.display = val === 'custom' ? '' : 'none';
+    });
+}
+</script>
+{% endblock %}
