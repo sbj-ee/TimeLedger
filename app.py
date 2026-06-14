@@ -1,16 +1,25 @@
+import csv
+import io
+import os
+import secrets
+import sqlite3
 from datetime import date, datetime, timedelta
 
-from flask import Flask, flash, redirect, render_template, request, url_for
+from flask import Flask, Response, flash, redirect, render_template, request, url_for
 
 import models
 
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    pass
+
 app = Flask(__name__)
-app.secret_key = "change-me-in-production"
+app.secret_key = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
 
-
-@app.before_request
-def ensure_db():
-    models.init_db()
+models.init_db()
 
 
 # --- Helpers ---
@@ -30,6 +39,33 @@ def month_bounds(d=None):
     else:
         end = d.replace(month=d.month + 1, day=1) - timedelta(days=1)
     return start.isoformat(), end.isoformat()
+
+
+def csv_safe(value):
+    """Neutralize CSV formula injection by prefixing risky leading characters."""
+    text = str(value)
+    if text and text[0] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + text
+    return text
+
+
+def parse_entry_form(form):
+    """Validate entry form input. Returns (data, None) or (None, error_message)."""
+    try:
+        project_id = int(form["project_id"])
+        hours = float(form["hours"])
+    except (KeyError, ValueError):
+        return None, "Project and hours are required and must be numeric."
+
+    entry_date = form.get("date", "").strip()
+    if not entry_date:
+        return None, "Date is required."
+
+    if hours <= 0:
+        return None, "Hours must be greater than zero."
+
+    note = form.get("note", "").strip()
+    return {"project_id": project_id, "date": entry_date, "hours": hours, "note": note}, None
 
 
 # --- Dashboard ---
@@ -129,16 +165,12 @@ def entries():
 
 @app.route("/entries/add", methods=["POST"])
 def entry_add():
-    project_id = int(request.form["project_id"])
-    entry_date = request.form["date"]
-    hours = float(request.form["hours"])
-    note = request.form.get("note", "").strip()
-
-    if hours <= 0:
-        flash("Hours must be greater than zero.", "error")
+    data, error = parse_entry_form(request.form)
+    if error:
+        flash(error, "error")
         return redirect(url_for("entries"))
 
-    models.create_entry(project_id, entry_date, hours, note)
+    models.create_entry(data["project_id"], data["date"], data["hours"], data["note"])
     flash("Entry added.", "success")
     return redirect(url_for("entries"))
 
@@ -151,16 +183,14 @@ def entry_edit(entry_id):
         return redirect(url_for("entries"))
 
     if request.method == "POST":
-        project_id = int(request.form["project_id"])
-        entry_date = request.form["date"]
-        hours = float(request.form["hours"])
-        note = request.form.get("note", "").strip()
-
-        if hours <= 0:
-            flash("Hours must be greater than zero.", "error")
+        data, error = parse_entry_form(request.form)
+        if error:
+            flash(error, "error")
             return redirect(url_for("entry_edit", entry_id=entry_id))
 
-        models.update_entry(entry_id, project_id, entry_date, hours, note)
+        models.update_entry(
+            entry_id, data["project_id"], data["date"], data["hours"], data["note"]
+        )
         flash("Entry updated.", "success")
         return redirect(url_for("entries"))
 
@@ -196,7 +226,7 @@ def project_add():
     try:
         models.create_project(name, description)
         flash(f"Project '{name}' created.", "success")
-    except Exception:
+    except sqlite3.IntegrityError:
         flash(f"Project '{name}' already exists.", "error")
 
     return redirect(url_for("projects"))
@@ -217,7 +247,7 @@ def project_edit(project_id):
         try:
             models.update_project(project_id, name, description, active)
             flash("Project updated.", "success")
-        except Exception:
+        except sqlite3.IntegrityError:
             flash("Project name already exists.", "error")
             return redirect(url_for("project_edit", project_id=project_id))
 
@@ -282,19 +312,26 @@ def reports_csv():
         end_date=end_date or None,
     )
 
-    lines = ["Date,Project,Hours,Note"]
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(["Date", "Project", "Hours", "Note"])
     for e in entries:
-        note = e["note"].replace('"', '""') if e["note"] else ""
-        lines.append(f'{e["date"]},{e["project_name"]},{e["hours"]},"{note}"')
+        writer.writerow([
+            csv_safe(e["date"]),
+            csv_safe(e["project_name"]),
+            e["hours"],
+            csv_safe(e["note"] or ""),
+        ])
 
-    from flask import Response
     return Response(
-        "\n".join(lines),
+        buffer.getvalue(),
         mimetype="text/csv",
         headers={"Content-Disposition": f"attachment; filename=time_ledger_{start_date}_{end_date}.csv"},
     )
 
 
 if __name__ == "__main__":
-    models.init_db()
-    app.run(debug=True, port=5050)
+    # Debug is on by default for local dev but can be disabled via the
+    # environment (FLASK_DEBUG=0) so it never ships on by accident.
+    debug = os.environ.get("FLASK_DEBUG", "1") == "1"
+    app.run(debug=debug, port=5050)
