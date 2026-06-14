@@ -27,6 +27,15 @@ python app.py
 
 Open http://localhost:5050
 
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+Tests also run automatically on every push and pull request via GitHub Actions.
+
 ## Tech Stack
 
 - Python / Flask
